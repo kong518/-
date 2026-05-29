@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+       return id is string && id.size() <= 256;
+    }
+
+    function incoming() {
+       return request.resource.data;
+    }
+
+    // Validation helper for records
+    function isValidRecord(data) {
+      return data.keys().hasAll(['yearMonth', 'name', 'dob', 'type', 'uploadedAt']) &&
+             data.keys().size() == 5 &&
+             data.yearMonth is string && data.yearMonth.size() == 7 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.dob is string && data.dob.size() >= 4 && data.dob.size() <= 10 &&
+             data.type in ['user', 'assistant'] &&
+             data.uploadedAt == request.time;
+    }
+
+    function isOrgUser() {
+      return isSignedIn() && request.auth.token.email.split('@')[1] == 'suwonrehab.or.kr';
+    }
+
+    match /records/{recordId} {
+      allow read: if isOrgUser();
+      
+      allow create: if isOrgUser() && isValidId(recordId) && isValidRecord(incoming());
+      
+      allow update: if isOrgUser() && isValidId(recordId) && isValidRecord(incoming()) && (
+        incoming().diff(resource.data).affectedKeys().hasOnly(['yearMonth', 'name', 'dob', 'type', 'uploadedAt'])
+      );
+      
+      allow delete: if isOrgUser();
+    }
+  }
+}

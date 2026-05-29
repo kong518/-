@@ -1,0 +1,23 @@
+{
+  "entities": {
+    "ActivityRecord": {
+      "title": "Activity Record",
+      "description": "Monthly record of a service user or activity assistant",
+      "type": "object",
+      "properties": {
+        "yearMonth": { "type": "string", "description": "Format: YYYY-MM" },
+        "name": { "type": "string" },
+        "dob": { "type": "string", "description": "Format: YYMMDD" },
+        "type": { "type": "string", "enum": ["user", "assistant"] },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["yearMonth", "name", "dob", "type", "uploadedAt"]
+    }
+  },
+  "firestore": {
+    "/records/{recordId}": {
+      "schema": "ActivityRecord",
+      "description": "Store individual monthly activity records"
+    }
+  }
+}

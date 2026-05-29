@@ -1,0 +1,8 @@
+{
+  "name": "활동지원 서비스 관리 현황",
+  "description": "이용자와 활동지원사의 월별 이용 현황을 관리하고 신규 및 종결 인원을 분석하는 대시보드입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
