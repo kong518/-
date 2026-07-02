@@ -48,11 +48,12 @@ export default function DataEntry() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setStatus({ type: 'none', message: '' });
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         
@@ -60,18 +61,35 @@ export default function DataEntry() {
         const rows2D = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
         let parsed: ParsedRow[] = [];
 
-        // Check if this sheet matches the linked format (with columns B, C, J, K, Q)
-        // Check row 0 headers
-        const headers = rows2D[0] || [];
-        const isLinkedFormat = headers.some((h: any) => 
-          typeof h === 'string' && 
-          (h.includes('대상자') || h.includes('제공인력') || h.includes('결제') || h.includes('서비스') || h.includes('시작'))
-        ) || (rows2D.length > 1 && rows2D.some(row => row && row.length > 10 && (row[1] || row[9])));
+        // Scan first 10 rows to find header row dynamically
+        let headerRowIndex = 0;
+        let isLinkedFormat = false;
+        
+        for (let r = 0; r < Math.min(rows2D.length, 10); r++) {
+          const row = rows2D[r];
+          if (!row) continue;
+          const rowStr = row.map(cell => String(cell || '')).join(' ');
+          if (rowStr.includes('대상자') || rowStr.includes('제공인력') || rowStr.includes('결제일시') || rowStr.includes('생년월일')) {
+            headerRowIndex = r;
+          }
+          if (rowStr.includes('대상자') && rowStr.includes('제공인력')) {
+            isLinkedFormat = true;
+          }
+        }
+
+        // Also if we didn't find headers, but rows have length > 10 and we have some content in column B (index 1) and Column J (index 9)
+        if (!isLinkedFormat && rows2D.length > 1) {
+          const sampleRows = rows2D.slice(1, 10);
+          const hasLinkedData = sampleRows.some(row => row && row.length > 10 && row[1] && row[9]);
+          if (hasLinkedData) {
+            isLinkedFormat = true;
+          }
+        }
 
         if (isLinkedFormat) {
           // New format: Column B = 대상자명, Column C = 이용자 생년월일, Column J = 제공인력명, Column K = 활동지원사 생년월일, Column Q = 결제 일시
           // Skip header row
-          for (let i = 1; i < rows2D.length; i++) {
+          for (let i = headerRowIndex + 1; i < rows2D.length; i++) {
             const row = rows2D[i];
             if (!row) continue;
 
@@ -81,12 +99,17 @@ export default function DataEntry() {
             const assistantDobVal = String(row[10] || '').trim();
             const startTime = row[16];
 
+            // If it's a header row itself (sometimes there are duplicate header rows or total rows)
+            if (userName === '대상자명' || userName === '이름' || assistantName === '제공인력명') {
+              continue;
+            }
+
             const ym = parseYearMonth(startTime, yearMonth);
             const userDob = cleanDob(userDobVal);
             const assistantDob = cleanDob(assistantDobVal);
 
             // Same row means they are linked
-            if (userName && userName !== '대상자명' && userDob) {
+            if (userName && userDob) {
               parsed.push({
                 연월: ym,
                 이름: userName,
@@ -97,7 +120,7 @@ export default function DataEntry() {
               });
             }
 
-            if (assistantName && assistantName !== '제공인력명' && assistantDob) {
+            if (assistantName && assistantDob) {
               parsed.push({
                 연월: ym,
                 이름: assistantName,
@@ -121,7 +144,7 @@ export default function DataEntry() {
           })).filter(r => r.이름 && r.생년월일);
         }
 
-        if (parsed.length === 0) throw new Error("유효한 데이터가 없습니다. 업로드할 양식 컬럼을 확인해 주세요.");
+        if (parsed.length === 0) throw new Error("분석된 유효 데이터가 없습니다. 업로드할 양식 컬럼(B열 대상자명, C열 이용자 생년월일, J열 제공인력명, K열 활동지원사 생년월일, Q열 결제일시)을 확인해 주세요.");
         
         // Deduplicate parsed records (중복 제거)
         const seen = new Set<string>();
@@ -148,9 +171,12 @@ export default function DataEntry() {
         }
 
         setInputData(uniqueParsed);
-        setStatus({ type: 'none', message: '' });
+        setStatus({ 
+          type: 'success', 
+          message: `엑셀 파일 분석 완료! 총 ${uniqueParsed.length}명의 데이터가 해석되어 준비되었습니다. 아래 미리보기를 확인하신 뒤 '확정 및 데이터베이스 저장' 버튼을 꼭 클릭해야 반영됩니다!` 
+        });
       } catch (err: any) {
-        setStatus({ type: 'error', message: err.message });
+        setStatus({ type: 'error', message: `엑셀 해석 오류: ${err.message}` });
       }
     };
     reader.readAsBinaryString(file);
@@ -296,6 +322,19 @@ export default function DataEntry() {
             <p className="text-slate-400 text-sm font-bold uppercase tracking-widest leading-none">Excel (.xlsx, .csv)</p>
           </div>
         </div>
+
+        {status.type !== 'none' && (
+          <div className={`mt-6 p-5 rounded-2xl flex items-center gap-4 border shadow-sm animate-in fade-in slide-in-from-top-1 ${
+            status.type === 'success' 
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${status.type === 'success' ? 'bg-emerald-100' : 'bg-rose-100'}`}>
+              {status.type === 'success' ? <CheckCircle2 className="w-6 h-6 text-emerald-600" /> : <AlertCircle className="w-6 h-6 text-rose-600" />}
+            </div>
+            <p className="font-bold text-sm tracking-tight leading-relaxed">{status.message}</p>
+          </div>
+        )}
       </div>
 
       {/* Manual Entry Section - Styled like the dark box in design */}
