@@ -16,7 +16,9 @@ interface ParsedRow {
 function parseYearMonth(val: any, defaultVal: string): string {
   if (!val) return defaultVal;
   if (val instanceof Date) {
-    return val.toISOString().slice(0, 7);
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
   }
   const str = String(val).trim();
   const match = str.match(/^(\d{4})[-/.]?(\d{2})/);
@@ -28,12 +30,31 @@ function parseYearMonth(val: any, defaultVal: string): string {
 
 function cleanDob(val: any): string {
   if (!val) return '';
-  let str = String(val).trim();
-  str = str.replace(/[-/.\s]/g, '');
-  if (str.length === 8 && (str.startsWith('19') || str.startsWith('20'))) {
-    return str.slice(2);
+  if (val instanceof Date) {
+    const y = String(val.getFullYear()).slice(-2);
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
   }
-  return str;
+  let str = String(val).trim();
+  const digitsOnly = str.replace(/[^0-9]/g, '');
+  if (digitsOnly.length === 6) {
+    return digitsOnly;
+  }
+  if (digitsOnly.length === 8 && (digitsOnly.startsWith('19') || digitsOnly.startsWith('20'))) {
+    return digitsOnly.slice(2);
+  }
+  if (str.includes('-') || str.includes('/') || str.includes('.')) {
+    const parsedDate = Date.parse(str);
+    if (!isNaN(parsedDate)) {
+      const dObj = new Date(parsedDate);
+      const y = String(dObj.getFullYear()).slice(-2);
+      const m = String(dObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dObj.getDate()).padStart(2, '0');
+      return `${y}${m}${d}`;
+    }
+  }
+  return digitsOnly;
 }
 
 export default function DataEntry() {

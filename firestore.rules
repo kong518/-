@@ -28,9 +28,9 @@ service cloud.firestore {
     function isValidRecord(data) {
       return data.keys().hasAll(['yearMonth', 'name', 'dob', 'type', 'uploadedAt']) &&
              data.keys().size() >= 5 && data.keys().size() <= 7 &&
-             data.yearMonth is string && data.yearMonth.size() == 7 &&
+             data.yearMonth is string && data.yearMonth.size() >= 4 && data.yearMonth.size() <= 10 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.dob is string && data.dob.size() >= 4 && data.dob.size() <= 10 &&
+             data.dob is string && data.dob.size() >= 0 && data.dob.size() <= 10 &&
              data.type in ['user', 'assistant'] &&
              data.uploadedAt == request.time &&
              (!data.keys().hasAny(['partnerName']) || (data.partnerName is string && data.partnerName.size() < 100)) &&
@@ -38,7 +38,7 @@ service cloud.firestore {
     }
 
     function isOrgUser() {
-      return isSignedIn() && request.auth.token.email.split('@')[1] == 'suwonrehab.or.kr';
+      return isSignedIn() && request.auth.token.email.lower().split('@')[1] == 'suwonrehab.or.kr';
     }
 
     match /records/{recordId} {
