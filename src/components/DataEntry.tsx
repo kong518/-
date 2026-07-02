@@ -8,6 +8,32 @@ interface ParsedRow {
   연월: string;
   이름: string;
   생년월일: string;
+  type?: 'user' | 'assistant';
+  partnerName?: string;
+  partnerDob?: string;
+}
+
+function parseYearMonth(val: any, defaultVal: string): string {
+  if (!val) return defaultVal;
+  if (val instanceof Date) {
+    return val.toISOString().slice(0, 7);
+  }
+  const str = String(val).trim();
+  const match = str.match(/^(\d{4})[-/.]?(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}`;
+  }
+  return defaultVal;
+}
+
+function cleanDob(val: any): string {
+  if (!val) return '';
+  let str = String(val).trim();
+  str = str.replace(/[-/.\s]/g, '');
+  if (str.length === 8 && (str.startsWith('19') || str.startsWith('20'))) {
+    return str.slice(2);
+  }
+  return str;
 }
 
 export default function DataEntry() {
@@ -29,17 +55,99 @@ export default function DataEntry() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws) as any[];
-
-        const parsed = data.map(row => ({
-          연월: String(row['연월'] || yearMonth),
-          이름: String(row['이름'] || '').trim(),
-          생년월일: String(row['생년월일'] || '').trim(),
-        })).filter(r => r.이름 && r.생년월일);
-
-        if (parsed.length === 0) throw new Error("유효한 데이터가 없습니다. 매핑 필드를 확인하세요 (연월, 이름, 생년월일).");
         
-        setInputData(parsed);
+        // Let's read both header styles
+        const rows2D = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        let parsed: ParsedRow[] = [];
+
+        // Check if this sheet matches the linked format (with columns B, C, J, K, Q)
+        // Check row 0 headers
+        const headers = rows2D[0] || [];
+        const isLinkedFormat = headers.some((h: any) => 
+          typeof h === 'string' && 
+          (h.includes('대상자') || h.includes('제공인력') || h.includes('결제') || h.includes('서비스') || h.includes('시작'))
+        ) || (rows2D.length > 1 && rows2D.some(row => row && row.length > 10 && (row[1] || row[9])));
+
+        if (isLinkedFormat) {
+          // New format: Column B = 대상자명, Column C = 이용자 생년월일, Column J = 제공인력명, Column K = 활동지원사 생년월일, Column Q = 결제 일시
+          // Skip header row
+          for (let i = 1; i < rows2D.length; i++) {
+            const row = rows2D[i];
+            if (!row) continue;
+
+            const userName = String(row[1] || '').trim();
+            const userDobVal = String(row[2] || '').trim();
+            const assistantName = String(row[9] || '').trim();
+            const assistantDobVal = String(row[10] || '').trim();
+            const startTime = row[16];
+
+            const ym = parseYearMonth(startTime, yearMonth);
+            const userDob = cleanDob(userDobVal);
+            const assistantDob = cleanDob(assistantDobVal);
+
+            // Same row means they are linked
+            if (userName && userName !== '대상자명' && userDob) {
+              parsed.push({
+                연월: ym,
+                이름: userName,
+                생년월일: userDob,
+                type: 'user',
+                partnerName: assistantName || '',
+                partnerDob: assistantDob || ''
+              });
+            }
+
+            if (assistantName && assistantName !== '제공인력명' && assistantDob) {
+              parsed.push({
+                연월: ym,
+                이름: assistantName,
+                생년월일: assistantDob,
+                type: 'assistant',
+                partnerName: userName || '',
+                partnerDob: userDob || ''
+              });
+            }
+          }
+        } else {
+          // Old single target structure
+          const data = XLSX.utils.sheet_to_json(ws) as any[];
+          parsed = data.map(row => ({
+            연월: String(row['연월'] || yearMonth),
+            이름: String(row['이름'] || '').trim(),
+            생년월일: cleanDob(row['생년월일']),
+            type: type,
+            partnerName: '',
+            partnerDob: ''
+          })).filter(r => r.이름 && r.생년월일);
+        }
+
+        if (parsed.length === 0) throw new Error("유효한 데이터가 없습니다. 업로드할 양식 컬럼을 확인해 주세요.");
+        
+        // Deduplicate parsed records (중복 제거)
+        const seen = new Set<string>();
+        const uniqueParsed: ParsedRow[] = [];
+        for (const item of parsed) {
+          const currentType = item.type || type;
+          const key = `${item.연월}_${currentType}_${item.이름}_${item.생년월일}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueParsed.push(item);
+          } else {
+            // If already exists but this one has partner info, update the existing one
+            const idx = uniqueParsed.findIndex(x => {
+              const xType = x.type || type;
+              return `${x.연월}_${xType}_${x.이름}_${x.생년월일}` === key;
+            });
+            if (idx !== -1) {
+              if (item.partnerName && !uniqueParsed[idx].partnerName) {
+                uniqueParsed[idx].partnerName = item.partnerName;
+                uniqueParsed[idx].partnerDob = item.partnerDob;
+              }
+            }
+          }
+        }
+
+        setInputData(uniqueParsed);
         setStatus({ type: 'none', message: '' });
       } catch (err: any) {
         setStatus({ type: 'error', message: err.message });
@@ -52,13 +160,27 @@ export default function DataEntry() {
   const handlePaste = (text: string) => {
     try {
       const lines = text.split('\n').filter(l => l.trim());
-      const parsed = lines.map(line => {
+      const parsed = lines.map((line): ParsedRow | null => {
         // Handle tabs or multiple spaces as delimiters
         const parts = line.split(/[\t\s]+/).filter(p => p.trim());
         if (parts.length >= 3) {
-          return { 연월: parts[0], 이름: parts[1], 생년월일: parts[2] };
+          return { 
+            연월: parts[0], 
+            이름: parts[1], 
+            생년월일: cleanDob(parts[2]), 
+            type: type, 
+            partnerName: '', 
+            partnerDob: '' 
+          };
         } else if (parts.length === 2) {
-          return { 연월: yearMonth, 이름: parts[0], 생년월일: parts[1] };
+          return { 
+            연월: yearMonth, 
+            이름: parts[0], 
+            생년월일: cleanDob(parts[1]), 
+            type: type, 
+            partnerName: '', 
+            partnerDob: '' 
+          };
         }
         return null;
       }).filter((r): r is ParsedRow => r !== null);
@@ -83,15 +205,18 @@ export default function DataEntry() {
     try {
       let count = 0;
       for (const row of inputData) {
-        // Deterministic ID to prevent duplicates for specific month/type/person
-        const recordId = `${row.연월}_${type}_${row.이름}_${row.생년월일}`;
+        const currentType = row.type || type;
+        // Deterministic ID including partner info to avoid collision and allow smooth overwrites
+        const recordId = `${row.연월}_${currentType}_${row.이름}_${row.생년월일}_${row.partnerName || ''}`;
         const recordPath = `records/${recordId}`;
         try {
           await setDoc(doc(db, 'records', recordId), {
             yearMonth: row.연월,
             name: row.이름,
             dob: row.생년월일,
-            type: type,
+            type: currentType,
+            partnerName: row.partnerName || '',
+            partnerDob: row.partnerDob || '',
             uploadedAt: serverTimestamp()
           });
           count++;
@@ -233,7 +358,21 @@ export default function DataEntry() {
                 {inputData.map((row, i) => (
                   <tr key={i} className="hover:bg-slate-50 transition-colors group">
                     <td className="py-5 px-8 text-sm font-bold text-slate-400 tabular-nums">{row.연월}</td>
-                    <td className="py-5 px-8 text-sm font-black text-slate-800">{row.이름}</td>
+                    <td className="py-5 px-8 text-sm font-black text-slate-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{row.이름}</span>
+                        {row.type && (
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${row.type === 'user' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-600'}`}>
+                            {row.type === 'user' ? '이용자' : '지원사'}
+                          </span>
+                        )}
+                        {row.partnerName && (
+                          <span className="text-[10px] text-indigo-500 bg-indigo-50/50 border border-indigo-100/30 px-2 py-0.5 rounded-lg font-bold">
+                            🤝 연계: {row.partnerName} ({row.partnerDob})
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-5 px-8 text-sm font-bold text-slate-400 tabular-nums">{row.생년월일}</td>
                     <td className="py-5 px-8 text-right">
                       <button onClick={() => removeItem(i)} className="text-slate-200 hover:text-rose-500 transition-colors bg-slate-50 group-hover:bg-rose-50 p-2 rounded-lg">

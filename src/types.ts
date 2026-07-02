@@ -8,6 +8,8 @@ export interface ActivityRecord {
   type: RecordType;
   uploadedAt: any; // Firestore Timestamp
   isRecontract?: boolean;
+  partnerName?: string;
+  partnerDob?: string;
 }
 
 export interface MonthlyStats {

@@ -27,12 +27,14 @@ service cloud.firestore {
     // Validation helper for records
     function isValidRecord(data) {
       return data.keys().hasAll(['yearMonth', 'name', 'dob', 'type', 'uploadedAt']) &&
-             data.keys().size() == 5 &&
+             data.keys().size() >= 5 && data.keys().size() <= 7 &&
              data.yearMonth is string && data.yearMonth.size() == 7 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.dob is string && data.dob.size() >= 4 && data.dob.size() <= 10 &&
              data.type in ['user', 'assistant'] &&
-             data.uploadedAt == request.time;
+             data.uploadedAt == request.time &&
+             (!data.keys().hasAny(['partnerName']) || (data.partnerName is string && data.partnerName.size() < 100)) &&
+             (!data.keys().hasAny(['partnerDob']) || (data.partnerDob is string && data.partnerDob.size() <= 10));
     }
 
     function isOrgUser() {
@@ -45,7 +47,7 @@ service cloud.firestore {
       allow create: if isOrgUser() && isValidId(recordId) && isValidRecord(incoming());
       
       allow update: if isOrgUser() && isValidId(recordId) && isValidRecord(incoming()) && (
-        incoming().diff(resource.data).affectedKeys().hasOnly(['yearMonth', 'name', 'dob', 'type', 'uploadedAt'])
+        incoming().diff(resource.data).affectedKeys().hasOnly(['yearMonth', 'name', 'dob', 'type', 'uploadedAt', 'partnerName', 'partnerDob'])
       );
       
       allow delete: if isOrgUser();

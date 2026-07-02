@@ -134,7 +134,8 @@ export default function PersonnelList({ type, allRecords }: Props) {
     const data = currentRoster.map(r => ({
       연월: r.yearMonth,
       이름: r.name,
-      생년월일: r.dob
+      생년월일: r.dob,
+      [type === 'user' ? '연계 활동지원사' : '연계 이용자']: r.partnerName ? `${r.partnerName}${r.partnerDob ? ` (${r.partnerDob})` : ''}` : '연계 없음'
     }));
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
@@ -222,7 +223,7 @@ export default function PersonnelList({ type, allRecords }: Props) {
                   </th>
                   <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">이름</th>
                   <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">생년월일</th>
-                  <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">활동 유형</th>
+                  <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{type === 'user' ? '연계 활동지원사' : '연계 이용자'}</th>
                   <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">관리</th>
                </tr>
             </thead>
@@ -251,10 +252,22 @@ export default function PersonnelList({ type, allRecords }: Props) {
                     </td>
                     <td className="py-5 px-8 text-sm font-bold text-slate-400 tabular-nums">{p.dob}</td>
                     <td className="py-5 px-8 text-sm">
-                      <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${type === 'user' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-600'}`}>
-                        {type === 'user' ? 'USER' : 'ASSISTANT'}
-                      </span>
+                      {p.partnerName ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-lg text-xs">
+                            {p.partnerName}
+                          </span>
+                          {p.partnerDob && (
+                            <span className="text-[11px] text-slate-400 font-medium font-mono">
+                              ({p.partnerDob})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-300 font-bold">연계 없음</span>
+                      )}
                     </td>
+
                     <td className="py-5 px-8 text-right">
                        {confirmDeleteId === p.id ? (
                          <div className="flex items-center justify-end gap-2 animate-in zoom-in-95 duration-200">
@@ -289,7 +302,7 @@ export default function PersonnelList({ type, allRecords }: Props) {
                ))}
                {currentRoster.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-32 text-center text-slate-300 font-bold uppercase tracking-[0.3em]">
+                    <td colSpan={5} className="py-32 text-center text-slate-300 font-bold uppercase tracking-[0.3em]">
                        표시할 명단이 없습니다.
                     </td>
                   </tr>

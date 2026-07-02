@@ -9,7 +9,9 @@
         "name": { "type": "string" },
         "dob": { "type": "string", "description": "Format: YYMMDD" },
         "type": { "type": "string", "enum": ["user", "assistant"] },
-        "uploadedAt": { "type": "string", "format": "date-time" }
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "partnerName": { "type": "string", "description": "Linked service partner name" },
+        "partnerDob": { "type": "string", "description": "Linked service partner DOB" }
       },
       "required": ["yearMonth", "name", "dob", "type", "uploadedAt"]
     }
